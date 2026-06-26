@@ -186,6 +186,12 @@ def process_account(acct):
     power = int(profile.get("mining_power", 0) or 0)
     balance = bal
 
+    # Energy boost FIRST (before claim, in case energy is low)
+    if energy < max_en:
+        r = call_fn("energyBoost", init_data)
+        if "_error" not in r:
+            energy = int(r.get("energy", energy) or energy)
+
     # Claim
     if pending >= 0.01:
         r = call_fn("claimMining", init_data)
@@ -194,7 +200,11 @@ def process_account(acct):
             pending = float(r.get("live_earned", 0) or 0)
             balance = float(r.get("balance", 0) or 0)
         else:
-            errors.append(f"Claim: {r['_error'][:40]}")
+            err_msg = r['_error']
+            if "No energy" in err_msg or "energy" in err_msg.lower():
+                pass  # not fatal, will retry next cycle
+            else:
+                errors.append(f"Claim: {err_msg[:40]}")
     else:
         pass
 
@@ -211,12 +221,6 @@ def process_account(acct):
             pass  # already running = not an error
         else:
             errors.append(f"Mining: {err_msg[:40]}")
-
-    # Energy boost
-    if energy < max_en:
-        r = call_fn("energyBoost", init_data)
-        if "_error" in r:
-            errors.append(f"Boost: {r['_error'][:40]}")
 
     # Stakes
     stakes = call_fn("listMyStakes", init_data)
