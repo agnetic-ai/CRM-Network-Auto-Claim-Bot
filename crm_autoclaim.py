@@ -19,18 +19,19 @@ API_BASE = "https://crmnetwork.xyz"
 DIR = os.path.dirname(os.path.abspath(__file__))
 ACCOUNTS_FILE = os.path.join(DIR, "accounts.local.json")  # real data (gitignored)
 TEMPLATE_FILE = os.path.join(DIR, "accounts.json")  # template (safe for git)
-HASHES_FILE = os.path.join(DIR, "hashes.local.json")  # function hashes (gitignored)
+HASHES_FILE = os.path.join(DIR, "hashes.local.json")
+HASHES_FALLBACK = os.path.join(DIR, "hashes.json")  # public hashes
 
 FUNCTIONS = {}
 
 
 def load_hashes():
     global FUNCTIONS
-    if not os.path.exists(HASHES_FILE):
-        print(f"Missing: {HASHES_FILE}")
-        print("Copy hashes.json to hashes.local.json and fill in real hashes")
+    path = HASHES_FILE if os.path.exists(HASHES_FILE) else HASHES_FALLBACK
+    if not os.path.exists(path):
+        print("Missing: hashes.json or hashes.local.json")
         sys.exit(1)
-    with open(HASHES_FILE) as f:
+    with open(path) as f:
         FUNCTIONS = json.load(f)
 
 
