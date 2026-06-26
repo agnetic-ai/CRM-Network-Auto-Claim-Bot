@@ -14,6 +14,7 @@ import subprocess
 import sys
 import os
 from datetime import datetime
+import time
 
 API_BASE = "https://crmnetwork.xyz"
 DIR = os.path.dirname(os.path.abspath(__file__))
@@ -100,7 +101,14 @@ def build_payload(init_data, extra=None):
     return {"t": seroval, "f": 63, "m": []}
 
 
+_last_call = 0
 def call_fn(fn_name, init_data, extra=None):
+    global _last_call
+    now = time.time()
+    wait = 3 - (now - _last_call)
+    if wait > 0:
+        time.sleep(wait)
+    _last_call = time.time()
     h = FUNCTIONS.get(fn_name)
     if not h:
         return {"_error": f"Unknown: {fn_name}"}
@@ -108,15 +116,21 @@ def call_fn(fn_name, init_data, extra=None):
     body = json.dumps(build_payload(init_data, extra))
     url = f"{API_BASE}/_serverFn/{h}"
 
-    result = subprocess.run([
-        "curl", "-s", url,
-        "-H", "Content-Type: application/json",
-        "-H", "x-tsr-serverFn: true",
-        "-H", "Accept: application/x-tss-framed, application/x-ndjson, application/json",
-        "-H", "Origin: https://crmnetwork.xyz",
-        "-H", "Referer: https://crmnetwork.xyz/",
-        "-d", body
-    ], capture_output=True, text=True, timeout=15)
+    try:
+        result = subprocess.run([
+            "curl", "-s", url,
+            "-H", "Content-Type: application/json",
+            "-H", "x-tsr-serverFn: true",
+            "-H", "Accept: application/x-tss-framed, application/x-ndjson, application/json",
+            "-H", "User-Agent: Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 Chrome/125.0 Mobile Safari/537.36 Telegram-Android/11.14.2",
+            "-H", "Origin: https://crmnetwork.xyz",
+            "-H", "Referer: https://crmnetwork.xyz/",
+            "-d", body
+        ], capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        return {"_error": "timeout (initData expired?)"}
+    except Exception as e:
+        return {"_error": str(e)[:60]}
 
     try:
         resp = json.loads(result.stdout)
@@ -160,6 +174,7 @@ def call_fn(fn_name, init_data, extra=None):
         elif err_val is False:
             return {"_error": "Request failed"}
 
+
     return seroval_value(res_val) if res_val is not None else {}
 
 
@@ -180,7 +195,7 @@ def process_account(acct):
         return {
             "name": name, "ok": False, "balance": 0, "rate": 0,
             "energy": 0, "max_energy": 100, "power": 0,
-            "earned": 0, "actions": [], "status": "fail",
+            "earned": 0, "actions": [], "boost": "", "status": "fail",
             "error": profile["_error"][:40],
         }
 
