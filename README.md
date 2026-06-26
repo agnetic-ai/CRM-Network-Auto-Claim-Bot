@@ -11,6 +11,13 @@ Auto-claim bot untuk [@CRMNetworkBot](https://t.me/CRMNetworkBot) Telegram Mini 
 - **Multi-account** — support banyak akun sekaligus
 - **Zero dependency** — cuma butuh Python 3 + curl
 
+## Requirements
+
+- Python 3.6+
+- curl
+
+No pip install needed — script uses only Python stdlib.
+
 ## Cara Kerja
 
 Bot ini memanggil server functions TanStack Start langsung via HTTP POST dengan payload seroval format. Tidak perlu browser atau Selenium — cukup curl.
