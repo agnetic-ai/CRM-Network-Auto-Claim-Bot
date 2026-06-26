@@ -172,16 +172,16 @@ def fmt(v, decimals=4):
 def process_account(acct):
     name = acct.get("name", "?")
     init_data = acct["init_data"]
-    steps = []
+    actions = []
     errors = []
 
     profile = call_fn("getProfile", init_data)
     if "_error" in profile:
         return {
-            "name": name, "ok": False,
-            "errors": [f"Profile: {profile['_error'][:60]}"],
-            "steps": [], "balance": 0, "rate": 0,
-            "energy": 0, "max_energy": 100, "power": 0, "earned": 0,
+            "name": name, "ok": False, "balance": 0, "rate": 0,
+            "energy": 0, "max_energy": 100, "power": 0,
+            "earned": 0, "actions": [], "status": "fail",
+            "error": profile["_error"][:40],
         }
 
     bal = float(profile.get("balance", 0) or 0)
@@ -193,17 +193,16 @@ def process_account(acct):
     balance = bal
 
     # Energy boost FIRST
+    boost_str = ""
     if energy < max_en:
         r = call_fn("energyBoost", init_data)
         if "_error" not in r:
             new_en = int(r.get("energy", energy) or energy)
             gained = new_en - energy
-            steps.append(("boost", f"+{gained} energy ({new_en}/{max_en})"))
+            boost_str = f"+{gained}en"
             energy = new_en
         else:
-            steps.append(("boost", f"skip ({r['_error'][:30]})"))
-    else:
-        steps.append(("boost", "full"))
+            boost_str = "skip"
 
     # Claim
     earned = 0
@@ -212,16 +211,14 @@ def process_account(acct):
         if "_error" not in r:
             earned = float(r.get("earned", 0) or 0)
             balance = float(r.get("balance", 0) or 0)
-            steps.append(("claim", f"+{fmt(earned)} CRM"))
+            actions.append(f"+{fmt(earned)}")
         else:
             err_msg = r["_error"]
             if "No energy" in err_msg or "energy" in err_msg.lower():
-                steps.append(("claim", "no energy (skip)"))
+                actions.append("no-en")
             else:
-                steps.append(("claim", f"err: {err_msg[:30]}"))
-                errors.append(f"Claim: {err_msg[:40]}")
-    else:
-        steps.append(("claim", f"pending {fmt(pending)} < 0.01"))
+                actions.append("err")
+                errors.append(f"Claim: {err_msg[:30]}")
 
     if balance == 0:
         profile = call_fn("getProfile", init_data)
@@ -230,15 +227,12 @@ def process_account(acct):
 
     # Restart mining
     r = call_fn("startMining", init_data)
-    if "_error" not in r:
-        steps.append(("mining", "started"))
-    else:
+    if "_error" in r:
         err_msg = r["_error"]
         if "Already" in err_msg and "mining" in err_msg:
-            steps.append(("mining", "running"))
+            pass
         else:
-            steps.append(("mining", f"err: {err_msg[:30]}"))
-            errors.append(f"Mining: {err_msg[:40]}")
+            errors.append(f"Mining: {err_msg[:30]}")
 
     # Stakes
     stakes = call_fn("listMyStakes", init_data)
@@ -247,17 +241,15 @@ def process_account(acct):
         if sl:
             r = call_fn("claimStakeRewards", init_data)
             if "_error" not in r:
-                steps.append(("stake", "rewards claimed"))
-            else:
-                steps.append(("stake", f"err: {r['_error'][:30]}"))
-                errors.append(f"Stake: {r['_error'][:40]}")
-        else:
-            steps.append(("stake", "none"))
+                actions.append("stake+")
+
+    status = "ok" if not errors else "fail"
 
     return {
-        "name": name, "ok": len(errors) == 0, "errors": errors, "steps": steps,
-        "balance": balance, "rate": rate, "energy": energy, "max_energy": max_en,
-        "power": power, "earned": earned,
+        "name": name, "ok": len(errors) == 0, "balance": balance, "rate": rate,
+        "energy": energy, "max_energy": max_en, "power": power,
+        "earned": earned, "actions": actions, "boost": boost_str,
+        "status": status, "error": "; ".join(errors) if errors else "",
     }
 
 
@@ -303,7 +295,7 @@ def main():
             print(f"No account: {only_name}")
             sys.exit(1)
 
-    ts = datetime.now().strftime("%H:%M:%S")
+    ts = datetime.now().strftime("%H:%M")
     results = []
 
     for acct in accounts:
@@ -312,42 +304,33 @@ def main():
 
     total_ok = sum(1 for r in results if r["ok"])
     total_fail = len(results) - total_ok
+    total_earned = sum(r["earned"] for r in results)
+    total_skipped = sum(1 for r in results if not r["actions"])
 
-    W = 56
+    sep = "-" * 38
 
-    def line(c="-"):
-        return "+" + c * (W - 2) + "+"
-
-    def row(text):
-        pad = W - 2 - len(text)
-        if pad < 0:
-            pad = 0
-        return "| " + text + " " * pad + "|"
-
-    print(line())
-    print(row(f"CRM Auto-Claim  {ts}  {len(results)} akun"))
-    print(line())
+    print("CRM Network - Cycle Complete")
+    print(sep)
 
     for r in results:
-        icon = "+" if r["ok"] else "!"
-        nm = r["name"]
-        print(row(f"[{icon}] {nm}"))
-        print(row(
-            f"  Bal: {fmt(r['balance'])}  Rate: {fmt(r['rate'])}/hr"
-            f"  E:{r['energy']}/{r['max_energy']}  P:{r['power']}"
-        ))
-        for step, detail in r.get("steps", []):
-            print(row(f"  {step:8s} {detail}"))
-        if r["errors"]:
-            for e in r["errors"]:
-                print(row(f"  ! {e}"))
-        print(line())
+        nm = r["name"][:10].ljust(10)
+        bal = fmt(r["balance"], 2).rjust(8)
+        act = " ".join(r["actions"]) if r["actions"] else "-"
+        boost = f" {r['boost']}" if r["boost"] else ""
 
-    status = f"{total_ok} OK"
+        if r["ok"]:
+            print(f"{nm}  {bal}  {act}{boost}")
+        else:
+            print(f"{nm}  {bal}  fail {r['error'][:20]}")
+
+    print(sep)
+    print(f"{'Accounts':<12} {len(results)}")
+    print(f"{'Claimed':<12} +{fmt(total_earned, 4)} CRM")
+    print(f"{'OK':<12} {total_ok}")
     if total_fail:
-        status += f" / {total_fail} FAIL"
-    print(row(status))
-    print(line())
+        print(f"{'Failed':<12} {total_fail}")
+    print(sep)
+
     return 0 if total_fail == 0 else 1
 
 
