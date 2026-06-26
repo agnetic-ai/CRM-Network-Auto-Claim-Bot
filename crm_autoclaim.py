@@ -17,10 +17,10 @@ from datetime import datetime
 
 API_BASE = "https://crmnetwork.xyz"
 DIR = os.path.dirname(os.path.abspath(__file__))
-ACCOUNTS_FILE = os.path.join(DIR, "accounts.local.json")  # real data (gitignored)
-TEMPLATE_FILE = os.path.join(DIR, "accounts.json")  # template (safe for git)
+ACCOUNTS_FILE = os.path.join(DIR, "accounts.local.json")
+TEMPLATE_FILE = os.path.join(DIR, "accounts.json")
 HASHES_FILE = os.path.join(DIR, "hashes.local.json")
-HASHES_FALLBACK = os.path.join(DIR, "hashes.json")  # public hashes
+HASHES_FALLBACK = os.path.join(DIR, "hashes.json")
 
 FUNCTIONS = {}
 
@@ -120,7 +120,7 @@ def call_fn(fn_name, init_data, extra=None):
 
     try:
         resp = json.loads(result.stdout)
-    except:
+    except Exception:
         return {"_error": f"Parse: {result.stdout[:100]}"}
 
     if not isinstance(resp, dict) or "p" not in resp:
@@ -172,12 +172,17 @@ def fmt(v, decimals=4):
 def process_account(acct):
     name = acct.get("name", "?")
     init_data = acct["init_data"]
-    balance = 0
+    steps = []
     errors = []
 
     profile = call_fn("getProfile", init_data)
     if "_error" in profile:
-        return (name, errors, f"Profile: {profile['_error'][:60]}")
+        return {
+            "name": name, "ok": False,
+            "errors": [f"Profile: {profile['_error'][:60]}"],
+            "steps": [], "balance": 0, "rate": 0,
+            "energy": 0, "max_energy": 100, "power": 0, "earned": 0,
+        }
 
     bal = float(profile.get("balance", 0) or 0)
     rate = float(profile.get("mining_rate", 0) or 0)
@@ -187,27 +192,36 @@ def process_account(acct):
     power = int(profile.get("mining_power", 0) or 0)
     balance = bal
 
-    # Energy boost FIRST (before claim, in case energy is low)
+    # Energy boost FIRST
     if energy < max_en:
         r = call_fn("energyBoost", init_data)
         if "_error" not in r:
-            energy = int(r.get("energy", energy) or energy)
+            new_en = int(r.get("energy", energy) or energy)
+            gained = new_en - energy
+            steps.append(("boost", f"+{gained} energy ({new_en}/{max_en})"))
+            energy = new_en
+        else:
+            steps.append(("boost", f"skip ({r['_error'][:30]})"))
+    else:
+        steps.append(("boost", "full"))
 
     # Claim
+    earned = 0
     if pending >= 0.01:
         r = call_fn("claimMining", init_data)
         if "_error" not in r:
             earned = float(r.get("earned", 0) or 0)
-            pending = float(r.get("live_earned", 0) or 0)
             balance = float(r.get("balance", 0) or 0)
+            steps.append(("claim", f"+{fmt(earned)} CRM"))
         else:
-            err_msg = r['_error']
+            err_msg = r["_error"]
             if "No energy" in err_msg or "energy" in err_msg.lower():
-                pass  # not fatal, will retry next cycle
+                steps.append(("claim", "no energy (skip)"))
             else:
+                steps.append(("claim", f"err: {err_msg[:30]}"))
                 errors.append(f"Claim: {err_msg[:40]}")
     else:
-        pass
+        steps.append(("claim", f"pending {fmt(pending)} < 0.01"))
 
     if balance == 0:
         profile = call_fn("getProfile", init_data)
@@ -216,11 +230,14 @@ def process_account(acct):
 
     # Restart mining
     r = call_fn("startMining", init_data)
-    if "_error" in r:
-        err_msg = r['_error']
+    if "_error" not in r:
+        steps.append(("mining", "started"))
+    else:
+        err_msg = r["_error"]
         if "Already" in err_msg and "mining" in err_msg:
-            pass  # already running = not an error
+            steps.append(("mining", "running"))
         else:
+            steps.append(("mining", f"err: {err_msg[:30]}"))
             errors.append(f"Mining: {err_msg[:40]}")
 
     # Stakes
@@ -229,15 +246,23 @@ def process_account(acct):
         sl = stakes if isinstance(stakes, list) else []
         if sl:
             r = call_fn("claimStakeRewards", init_data)
-            if "_error" in r:
+            if "_error" not in r:
+                steps.append(("stake", "rewards claimed"))
+            else:
+                steps.append(("stake", f"err: {r['_error'][:30]}"))
                 errors.append(f"Stake: {r['_error'][:40]}")
+        else:
+            steps.append(("stake", "none"))
 
-    return (name, errors, f"{fmt(balance)} CRM | {fmt(rate)}/hr | E:{energy}/{max_en} | P:{power}")
+    return {
+        "name": name, "ok": len(errors) == 0, "errors": errors, "steps": steps,
+        "balance": balance, "rate": rate, "energy": energy, "max_energy": max_en,
+        "power": power, "earned": earned,
+    }
 
 
 def load_accounts(path):
     if not os.path.exists(path):
-        # fallback to template
         fallback = TEMPLATE_FILE
         if os.path.exists(fallback):
             with open(fallback) as f:
@@ -279,31 +304,50 @@ def main():
             sys.exit(1)
 
     ts = datetime.now().strftime("%H:%M:%S")
-    total_ok = 0
-    total_fail = 0
     results = []
 
     for acct in accounts:
-        name, errors, summary = process_account(acct)
-        if errors:
-            total_fail += 1
-            results.append((name, False, errors, summary))
-        else:
-            total_ok += 1
-            results.append((name, True, [], summary))
+        r = process_account(acct)
+        results.append(r)
 
-    # Output
-    print(f"[{ts}] CRM Auto-Claim ({total_ok + total_fail} akun)")
-    print()
-    for name, ok, errors, summary in results:
-        status = "OK" if ok else "FAIL"
-        print(f"  [{status}] {name}")
-        print(f"         {summary}")
-        if errors:
-            for e in errors:
-                print(f"         ! {e}")
-    print()
-    print(f"  {total_ok} OK / {total_fail} FAIL / {total_ok + total_fail} total")
+    total_ok = sum(1 for r in results if r["ok"])
+    total_fail = len(results) - total_ok
+
+    W = 56
+
+    def line(c="-"):
+        return "+" + c * (W - 2) + "+"
+
+    def row(text):
+        pad = W - 2 - len(text)
+        if pad < 0:
+            pad = 0
+        return "| " + text + " " * pad + "|"
+
+    print(line())
+    print(row(f"CRM Auto-Claim  {ts}  {len(results)} akun"))
+    print(line())
+
+    for r in results:
+        icon = "+" if r["ok"] else "!"
+        nm = r["name"]
+        print(row(f"[{icon}] {nm}"))
+        print(row(
+            f"  Bal: {fmt(r['balance'])}  Rate: {fmt(r['rate'])}/hr"
+            f"  E:{r['energy']}/{r['max_energy']}  P:{r['power']}"
+        ))
+        for step, detail in r.get("steps", []):
+            print(row(f"  {step:8s} {detail}"))
+        if r["errors"]:
+            for e in r["errors"]:
+                print(row(f"  ! {e}"))
+        print(line())
+
+    status = f"{total_ok} OK"
+    if total_fail:
+        status += f" / {total_fail} FAIL"
+    print(row(status))
+    print(line())
     return 0 if total_fail == 0 else 1
 
 
