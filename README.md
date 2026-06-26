@@ -4,63 +4,62 @@ Auto-claim bot untuk [@CRMNetworkBot](https://t.me/CRMNetworkBot) Telegram Mini 
 
 ## Fitur
 
-- ✅ **Auto-claim** — claim mining reward otomatis
-- ✅ **Auto restart mining** — mulai mining lagi setelah claim
-- ✅ **Energy boost** — boost energy otomatis
-- ✅ **Stake rewards** — claim stake rewards
-- ✅ **Multi-account** — support banyak akun sekaligus
-- ✅ **Curl-based** — no browser, no Selenium, lightweight
+- **Auto-claim** — claim mining reward otomatis
+- **Auto restart mining** — mulai mining lagi setelah claim
+- **Energy boost** — boost energy otomatis sebelum claim
+- **Stake rewards** — claim reward dari stake yang sudah ada
+- **Multi-account** — support banyak akun sekaligus
+- **Zero dependency** — cuma butuh Python 3 + curl
 
 ## Cara Kerja
 
-Bot ini memanggil server functions TanStack Start langsung via HTTP POST dengan payload seroval. Tidak perlu browser, cukup curl.
+Bot ini memanggil server functions TanStack Start langsung via HTTP POST dengan payload seroval format. Tidak perlu browser atau Selenium — cukup curl.
+
+Endpoint: `POST https://crmnetwork.xyz/_serverFn/<sha256hash>`
+
+Function hashes sudah tersedia di `hashes.json`. Jika hash berubah (server update), tinggal update file tersebut.
 
 ## Setup
 
 ### 1. Clone
+
 ```bash
 git clone https://github.com/agnetic-ai/CRM-Network-Auto-Claim-Bot.git
 cd CRM-Network-Auto-Claim-Bot
 ```
 
-### 2. Siapkan function hashes
+### 2. Siapkan akun
 
-Buat file `hashes.local.json` dari template:
-```bash
-cp hashes.json hashes.local.json
-```
+Copy template dan isi dengan initData asli:
 
-Isi dengan hash function yang benar (didapat dari reverse engineering bundle JS).
-
-### 3. Siapkan akun
-
-Buat file `accounts.local.json` dari template:
 ```bash
 cp accounts.json accounts.local.json
 ```
 
-Isi `init_data` dengan data dari Telegram Web App:
+Cara dapat initData:
+
 1. Buka [@CRMNetworkBot](https://t.me/CRMNetworkBot) di Telegram
-2. Buka Mini App-nya
+2. Klik buka Mini App-nya
 3. Buka DevTools (F12) → Console
 4. Ketik: `copy(Telegram.WebApp.initData)`
 5. Paste ke `accounts.local.json`
 
-Format file:
+Format:
+
 ```json
 [
   {
     "name": "akun1",
-    "init_data": "user=%7B%22id%22%3A..."
+    "init_data": "user=%7B%22id%22%3A12345%2C...signature_here"
   },
   {
     "name": "akun2",
-    "init_data": "user=%7B%22id%22%3A..."
+    "init_data": "user=%7B%22id%22%3A67890%2C...signature_here"
   }
 ]
 ```
 
-### 4. Jalankan
+### 3. Jalankan
 
 ```bash
 python3 crm_autoclaim.py
@@ -72,13 +71,13 @@ python3 crm_autoclaim.py
 # Semua akun
 python3 crm_autoclaim.py
 
-# Akun tertentu doang
+# Akun tertentu
 python3 crm_autoclaim.py --only ombengz
 
-# Pake file akun custom
+# File akun custom
 python3 crm_autoclaim.py --accounts /path/ke/file.json
 
-# Test (profile akun pertama)
+# Test profile akun pertama
 python3 crm_autoclaim.py -t
 ```
 
@@ -97,13 +96,20 @@ python3 crm_autoclaim.py -t
 
 ## Cron Job (VPS)
 
-Jalankan tiap 30 menit:
+Rekomendasi: tiap 100 menit (~1 jam 40 menit). Lebih sering dari itu bikin energy boncos, lebih jarang pending kecil.
+
 ```bash
 crontab -e
 ```
 
 ```
-*/30 * * * * cd /path/to/CRM-Network-Auto-Claim-Bot && python3 crm_autoclaim.py >> crm.log
+59 0,2,4,6,8,10,12,14,16,18,20,22 * * * cd /path/to/CRM-Network-Auto-Claim-Bot && python3 crm_autoclaim.py >> crm.log 2>&1
+```
+
+Atau pakai loop:
+
+```bash
+while true; do python3 crm_autoclaim.py >> crm.log 2>&1; sleep 6000; done
 ```
 
 ## File Structure
@@ -111,15 +117,34 @@ crontab -e
 ```
 .
 ├── crm_autoclaim.py         # Main script
-├── accounts.json            # Template akun (placeholder, safe for git)
-├── accounts.local.json      # Akun asli (gitignored)
-├── hashes.json              # Template hash function (placeholder, safe for git)
-├── hashes.local.json        # Hash asli (gitignored)
-└── .gitignore               # Ignore sensitive files
+├── accounts.json            # Template akun (placeholder)
+├── accounts.local.json      # Akun asli — initData (gitignored)
+├── hashes.json              # Function hashes (public, sudah berisi hash asli)
+├── hashes.local.json        # Override hashes (opsional, gitignored)
+└── .gitignore
 ```
+
+## Hash Override
+
+`hashes.json` sudah berisi hash yang benar. Jika server update hash-nya:
+
+1. Ambil hash baru dari bundle JS (`/assets/api.functions-*.js`)
+2. Update `hashes.json` atau buat `hashes.local.json` untuk override lokal
+
+Script akan pakai `hashes.local.json` jika ada, kalau tidak fallback ke `hashes.json`.
+
+## Troubleshooting
+
+| Error | Penyebab | Solusi |
+|-------|----------|--------|
+| `TG_AUTH_REQUIRED` | initData expired | Ambil initData baru dari Telegram Web App |
+| `No energy` | Energy habis | Normal — skip, claim di cycle berikutnya |
+| `Missing: hashes.json` | File hash tidak ada | Pastikan `hashes.json` ada di direktori yang sama |
+| `Bad response` | Server down / hash expired | Cek hash masih valid, cek server status |
 
 ## Catatan
 
-- **initData expiry** tergantung server — bisa tahan berhari-hari hingga berminggu-minggu. Kalau error `TG_AUTH_REQUIRED`, tinggal refresh initData dari Telegram Web App.
-- **error=true** dalam response seroval berarti sukses (bukan error) — ini konvensi framework TanStack Start.
-- Script hanya support curl — dependency zero.
+- **initData expiry** tergantung server CRMNetworkBot — bisa tahan >24 jam hingga berminggu-minggu. Kalau `TG_AUTH_REQUIRED`, refresh initData.
+- **error=true** dalam response seroval = sukses (bukan error). Ini konvensi framework TanStack Start.
+- **Energy boost** dijalankan sebelum claim — claim tanpa energy = skip.
+- Script zero dependency — cuma Python 3 standar + curl.
