@@ -1,0 +1,9 @@
+{
+  "getProfile": "copy_real_hash_disini",
+  "startMining": "copy_real_hash_disini",
+  "claimMining": "copy_real_hash_disini",
+  "energyBoost": "copy_real_hash_disini",
+  "listMyStakes": "copy_real_hash_disini",
+  "claimStakeRewards": "copy_real_hash_disini",
+  "listTasks": "copy_real_hash_disini"
+}

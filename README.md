@@ -13,7 +13,7 @@ Auto-claim bot untuk [@CRMNetworkBot](https://t.me/CRMNetworkBot) Telegram Mini 
 
 ## Cara Kerja
 
-Bot ini memanggil server functions TanStack Start langsung via HTTP POST ke `https://crmnetwork.xyz/_serverFn/<hash>` dengan payload seroval. Tidak perlu browser, cukup curl.
+Bot ini memanggil server functions TanStack Start langsung via HTTP POST dengan payload seroval. Tidak perlu browser, cukup curl.
 
 ## Setup
 
@@ -23,7 +23,16 @@ git clone https://github.com/agnetic-ai/CRM-Network-Auto-Claim-Bot.git
 cd CRM-Network-Auto-Claim-Bot
 ```
 
-### 2. Siapkan akun
+### 2. Siapkan function hashes
+
+Buat file `hashes.local.json` dari template:
+```bash
+cp hashes.json hashes.local.json
+```
+
+Isi dengan hash function yang benar (didapat dari reverse engineering bundle JS).
+
+### 3. Siapkan akun
 
 Buat file `accounts.local.json` dari template:
 ```bash
@@ -51,7 +60,7 @@ Format file:
 ]
 ```
 
-### 3. Jalankan
+### 4. Jalankan
 
 ```bash
 python3 crm_autoclaim.py
@@ -104,6 +113,8 @@ crontab -e
 ├── crm_autoclaim.py         # Main script
 ├── accounts.json            # Template akun (placeholder, safe for git)
 ├── accounts.local.json      # Akun asli (gitignored)
+├── hashes.json              # Template hash function (placeholder, safe for git)
+├── hashes.local.json        # Hash asli (gitignored)
 └── .gitignore               # Ignore sensitive files
 ```
 

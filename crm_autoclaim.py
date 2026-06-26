@@ -19,16 +19,19 @@ API_BASE = "https://crmnetwork.xyz"
 DIR = os.path.dirname(os.path.abspath(__file__))
 ACCOUNTS_FILE = os.path.join(DIR, "accounts.local.json")  # real data (gitignored)
 TEMPLATE_FILE = os.path.join(DIR, "accounts.json")  # template (safe for git)
+HASHES_FILE = os.path.join(DIR, "hashes.local.json")  # function hashes (gitignored)
 
-FUNCTIONS = {
-    "getProfile": "2e857a8661ed051f72427143277d80bab9f7d7a3291576d0e9fc51f1a8bfdd99",
-    "startMining": "3ce09e81397c87c813050840a83ac28d3a2001a1ea6b43b348831bcf76cc15d5",
-    "claimMining": "300377a39126958995cb42ba5717a5e58e7cacfe3d7893249b420ebb732a1899",
-    "energyBoost": "11259932e8c6c434ff203bfe223b448e216b46c21e299ff4581e489b22e68192",
-    "listMyStakes": "43bc1dd47231520a38a89f629b259b1f52d7b9c652bced972fad508a529d67da",
-    "claimStakeRewards": "4bc0002934d80d70d5adb3902df03e4e51e4aae2b7bb307a464f19ebc18f4cff",
-    "listTasks": "62fb8cd3427e2b52cffe2025ec235b259a81792855f4e7d0716f7a8933e9ee37",
-}
+FUNCTIONS = {}
+
+
+def load_hashes():
+    global FUNCTIONS
+    if not os.path.exists(HASHES_FILE):
+        print(f"Missing: {HASHES_FILE}")
+        print("Copy hashes.json to hashes.local.json and fill in real hashes")
+        sys.exit(1)
+    with open(HASHES_FILE) as f:
+        FUNCTIONS = json.load(f)
 
 
 def seroval_key(item):
@@ -247,6 +250,7 @@ def load_accounts(path):
 
 
 def main():
+    load_hashes()
     acct_path = ACCOUNTS_FILE
     only_name = None
 
