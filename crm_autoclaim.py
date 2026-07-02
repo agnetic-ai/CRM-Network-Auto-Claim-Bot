@@ -106,6 +106,7 @@ def call_fn(fn_name, init_data, extra=None):
     global _last_call
     now = time.time()
     wait = 3 - (now - _last_call)
+>>>>>>> ea7dc22 (Update: crm_autoclaim.py v4 + add crm_boost.py)
     if wait > 0:
         time.sleep(wait)
     _last_call = time.time()
@@ -240,6 +241,12 @@ def process_account(acct):
         if "_error" not in profile:
             balance = float(profile.get("balance", 0) or 0)
 
+    # Re-boost after claim drain — startMining also needs energy
+    # Note: unconditional boost because cached energy is stale after claim
+    r = call_fn("energyBoost", init_data)
+    if "_error" not in r:
+        energy = int(r.get("energy", energy) or energy)
+
     # Restart mining
     r = call_fn("startMining", init_data)
     if "_error" in r:
@@ -320,6 +327,7 @@ def main():
     total_ok = sum(1 for r in results if r["ok"])
     total_fail = len(results) - total_ok
     total_earned = sum(r["earned"] for r in results)
+    total_balance = sum(r["balance"] for r in results)
     total_skipped = sum(1 for r in results if not r["actions"])
 
     sep = "-" * 38
@@ -330,16 +338,18 @@ def main():
     for r in results:
         nm = r["name"][:10].ljust(10)
         bal = fmt(r["balance"], 2).rjust(8)
+        en = f"E:{r['energy']}/{r['max_energy']}"
         act = " ".join(r["actions"]) if r["actions"] else "-"
         boost = f" {r['boost']}" if r["boost"] else ""
 
         if r["ok"]:
-            print(f"{nm}  {bal}  {act}{boost}")
+            print(f"{nm}  {bal}  {en}  {act}{boost}")
         else:
-            print(f"{nm}  {bal}  fail {r['error'][:20]}")
+            print(f"{nm}  {bal}  {en}  fail {r['error'][:15]}")
 
     print(sep)
     print(f"{'Accounts':<12} {len(results)}")
+    print(f"{'Total Balance':<12} {fmt(total_balance, 2)} CRM")
     print(f"{'Claimed':<12} +{fmt(total_earned, 4)} CRM")
     print(f"{'OK':<12} {total_ok}")
     if total_fail:
