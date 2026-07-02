@@ -105,8 +105,7 @@ _last_call = 0
 def call_fn(fn_name, init_data, extra=None):
     global _last_call
     now = time.time()
-    wait = 3 - (now - _last_call)
->>>>>>> ea7dc22 (Update: crm_autoclaim.py v4 + add crm_boost.py)
+    wait = 2 - (now - _last_call)
     if wait > 0:
         time.sleep(wait)
     _last_call = time.time()
